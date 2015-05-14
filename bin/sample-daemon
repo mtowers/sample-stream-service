@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+require 'pry-byebug'
+
+
+lib = File.expand_path '../../lib', __FILE__
+$LOAD_PATH.unshift lib unless $LOAD_PATH.include? lib
+
+require 'newrelic_rpm'
+require 'sneakers'
+require 'sneakers/metrics/newrelic_metrics'
+require 'sneakers/runner'
+require 'realself/stream'
+require 'realself/daemon'
+
+require 'test_ack_handler'
+require 'test_reject_handler'
+require 'test_requeue_handler'
+require 'test_enclosure'
+
+
+Sneakers.configure({
+  :ack           => true,
+  :amqp          => ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672'),
+  :daemonize     => ['production','test'].include?(ENV['RACK_ENV']),
+  :durable       => true,
+  :env           => ENV.fetch('DAEMON_ENV','development'),
+  :exchange_type => 'topic',
+  :heartbeat     => 100,
+  :log           => ENV.fetch('DAEMON_LOG', STDOUT),
+  :metrics       => Sneakers::Metrics::NewrelicMetrics.new,
+  :pid_path      => File.dirname(__FILE__) + '/sneakers.pid',
+  :prefetch      => 1,
+  :threads       => 1,
+  :workers       => 1
+})
+
+handler_params = {
+  :debug_mode => true
+}
+
+RealSelf::Daemon::StreamActivityWorker.configure({
+  :enable_dlx       => true,
+  :enable_newrelic  => true,
+  :enclosure        => TestEnclosure,
+  :exchange_name    => ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream.e.topic.stream-test.stream_activity'),
+  :handler_params   => handler_params,
+  :queue_name       => ENV.fetch('STREAM_ACTIVITY_QUEUE', 'q.realself-demo-daemon.stream_activity')
+})
+
+WORKERS = []
+ObjectSpace.each_object Class do |c|
+  WORKERS << c if c.ancestors.include?(Sneakers::Worker) && c.configured
+end
+
+Sneakers::Runner.new(WORKERS).run
