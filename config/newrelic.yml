@@ -15,6 +15,9 @@ common: &default_settings
   # You must specify the license key associated with your New Relic
   # account.  This key binds your Agent's data to your account in the
   # New Relic service.
+  # Alternately, set an environment variable of
+  # NEW_RELIC_LICENSE_KEY in your ruby runtime environment
+  # see: https://docs.newrelic.com/docs/agents/ruby-agent/installation-configuration/ruby-agent-configuration
   license_key: '[your license key here]'
 
   # Agent Enabled (Ruby/Rails Only)

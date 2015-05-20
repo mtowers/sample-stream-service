@@ -38,14 +38,21 @@ handler_params = {
   :debug_mode => true
 }
 
-RealSelf::Daemon::StreamActivityWorker.configure({
+worker_config = {
   :enable_dlx       => true,
-  :enable_newrelic  => true,
   :enclosure        => TestEnclosure,
   :exchange_name    => ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream.e.topic.stream-test.stream_activity'),
   :handler_params   => handler_params,
-  :queue_name       => ENV.fetch('STREAM_ACTIVITY_QUEUE', 'q.realself-demo-daemon.stream_activity')
-})
+  :queue_name       => ENV.fetch('STREAM_ACTIVITY_QUEUE', 'q.realself-sample-daemon.stream_activity')
+}
+
+RealSelf::Daemon::StreamActivityWorker.configure(worker_config)
+
+# set up NewRelic monitoring
+Sneakers::Metrics::NewrelicMetrics.eagent ::NewRelic
+RealSelf::Daemon::StreamActivityWorker.include ::NewRelic::Agent::Instrumentation::ControllerInstrumentation
+RealSelf::Daemon::StreamActivityWorker.add_transaction_tracer :work_with_params, name: 'MetricsWorker', params: 'args[0]'
+
 
 WORKERS = []
 ObjectSpace.each_object Class do |c|
