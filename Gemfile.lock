@@ -1,5 +1,6 @@
-PATH
-  remote: ../stream-ruby
+GIT
+  remote: ssh://git@github.com/RealSelf/stream-ruby.git
+  revision: 42326ccb4f9c986045c1948ff1a95f124c8f7983
   specs:
     realself-stream (1.0.2)
       bunny
@@ -70,5 +71,5 @@ DEPENDENCIES
   newrelic_rpm
   pry-byebug
   rake
-  realself-stream!
+  realself-stream (= 1.0.2)!
   sneakers
