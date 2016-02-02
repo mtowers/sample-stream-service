@@ -1,62 +1,129 @@
 #!/usr/bin/env ruby
-require 'pry-byebug'
-
-
 lib = File.expand_path '../../lib', __FILE__
 $LOAD_PATH.unshift lib unless $LOAD_PATH.include? lib
 
+require 'mongo'
 require 'newrelic_rpm'
+require 'pry-byebug' if 'production' != ENV['DAEMON_ENV']
 require 'sneakers'
+require 'sneakers/handlers/maxretry'
 require 'sneakers/metrics/newrelic_metrics'
 require 'sneakers/runner'
 require 'realself/stream'
 require 'realself/daemon'
 
+require 'fanout_handler'
 require 'test_ack_handler'
 require 'test_reject_handler'
 require 'test_requeue_handler'
 require 'test_enclosure'
 
 
+# collect configuration parameters
+activity_exchange         = ENV.fetch('ACTIVITY_EXCHANGE', 'activity-exchange')
+activity_queue            = ENV.fetch('ACTIVITY_QUEUE', 'sample-daemon.activity')
+debug_mode                = 'production' != ENV['DAEMON_ENV']
+max_retry_count           = 3 # retries on error
+metrics_provider          = Sneakers::Metrics::NewrelicMetrics.new if ENV['NEW_RELIC_LICENSE_KEY']
+mongodb_url               = URI(ENV.fetch('MONGODB_URL', 'mongodb://localhost:27017/sample-service'))
+rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@rabbit.realselfcorp.com:5672'))
+stream_activity_exchange  = ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream-activity-exchange')
+stream_activity_queue     = ENV.fetch('STREAM_ACTIVITY_QUEUE', 'sample-daemon.stream-activity')
+worker_count              = 'production' != ENV['DAEMON_ENV'] ? 1 : 10
+
+
 Sneakers.configure({
   :ack           => true,
-  :amqp          => ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672'),
-  :daemonize     => ['production','test'].include?(ENV['RACK_ENV']),
+  :amqp          => rmq_url.to_s,
+  :daemonize     => false, # do not enable this!  it's incompatible with upstart
   :durable       => true,
   :env           => ENV.fetch('DAEMON_ENV','development'),
   :exchange_type => 'topic',
-  :heartbeat     => 100,
+  :handler       => Sneakers::Handlers::Maxretry,
+  :heartbeat     => 60,
   :log           => ENV.fetch('DAEMON_LOG', STDOUT),
-  :metrics       => Sneakers::Metrics::NewrelicMetrics.new,
-  :pid_path      => File.dirname(__FILE__) + '/sneakers.pid',
+  :metrics       => metrics_provider,
   :prefetch      => 1,
-  :threads       => 1,
-  :workers       => 1
+  :retry_max_times  => max_retry_count,
+  :retry_timeout    => 10000, # msec
+  :threads       => 1, # don't use > 1 - use more workers instead
+  :workers       => worker_count
 })
 
-handler_params = {
-  :debug_mode => true
-}
 
-worker_config = {
-  :enable_dlx       => true,
+# configure loggers
+Sneakers::logger.level = debug_mode ? Logger::DEBUG : Logger::INFO
+RealSelf::logger = Sneakers::logger
+
+
+# report startup configuration
+RealSelf::logger.info("Staring daemon with environment:   #{ENV.fetch('DAEMON_ENV','development')}")
+RealSelf::logger.info("ACTIVITY_EXCHANGE:                 #{activity_exchange}")
+RealSelf::logger.info("ACTIVITY_QUEUE:                    #{activity_queue}")
+RealSelf::logger.info("RABBITMQ_URL:                      #{rmq_url.to_s}")
+RealSelf::logger.info("MAX_RETRY_COUNT:                   #{max_retry_count}")
+RealSelf::logger.info("MONGODB_URL:                       #{mongodb_url.to_s}")
+RealSelf::logger.info("STREAM_ACTIVITY_EXCHANGE:          #{stream_activity_exchange}")
+RealSelf::logger.info("STREAM_ACTIVITY_QUEUE:             #{stream_activity_queue}")
+RealSelf::logger.info("WORKER_COUNT:                      #{worker_count}")
+
+
+# configure mongodb client
+mongo_client  = Mongo::Client.new([mongodb_url.to_s], :min_pool_size => worker_count)
+mongo_db      = mongo_client.database
+
+
+# configure workers for Activity messages
+RealSelf::Daemon::ActivityWorker.configure({
+  :enable_retry     => true,
   :enclosure        => TestEnclosure,
-  :exchange_name    => ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream.e.topic.stream-test.stream_activity'),
-  :handler_params   => handler_params,
-  :queue_name       => ENV.fetch('STREAM_ACTIVITY_QUEUE', 'q.realself-sample-daemon.stream_activity')
-}
+  :exchange_name    => activity_exchange,
+  :handler_params   => {
+    :mongo_db   => mongo_db,
+    :publisher  => RealSelf::Stream::Publisher.new(
+      {
+        :heartbeat  => 60,
+        :host       => rmq_url.host,
+        :password   => rmq_url.password,
+        :port       => rmq_url.port,
+        :user       => rmq_url.user,
+        :vhost      => '/'
+      },
+      stream_activity_exchange)
+  },
+  :queue_name       => activity_queue
+})
 
-RealSelf::Daemon::StreamActivityWorker.configure(worker_config)
+
+
+# configure workers for StreamActivity messages
+RealSelf::Daemon::StreamActivityWorker.configure({
+  :enable_retry     => true,
+  :enclosure        => TestEnclosure,
+  :exchange_name    => stream_activity_exchange,
+  :queue_name       => stream_activity_queue,
+  :handler_params   => {
+    :mongo_db => mongo_db
+  }
+})
+
 
 # set up NewRelic monitoring
-Sneakers::Metrics::NewrelicMetrics.eagent ::NewRelic
-RealSelf::Daemon::StreamActivityWorker.include ::NewRelic::Agent::Instrumentation::ControllerInstrumentation
-RealSelf::Daemon::StreamActivityWorker.add_transaction_tracer :work_with_params, name: 'MetricsWorker', params: 'args[0]'
+if ENV['NEW_RELIC_LICENSE_KEY']
+  metrics_provider.eagent ::NewRelic
+  RealSelf::Daemon::ActivityWorker.include ::NewRelic::Agent::Instrumentation::ControllerInstrumentation
+  RealSelf::Daemon::ActivityWorker.add_transaction_tracer :work_with_params, name: 'MetricsWorker', params: 'args[0]'
+else
+  RealSelf::logger.warn("NewRelic license key not found.  Monitoring disabled.")
+end
 
 
+# find all worker classes
 WORKERS = []
 ObjectSpace.each_object Class do |c|
   WORKERS << c if c.ancestors.include?(Sneakers::Worker) && c.configured
 end
 
+
+# start the daemon
 Sneakers::Runner.new(WORKERS).run

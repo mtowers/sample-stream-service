@@ -1,7 +1,7 @@
 class TestRejectHandler
   include RealSelf::Handler::StreamActivity
 
-  def initialize(debug_mode:)
+  def initialize debug_mode:
     @debug_mode = debug_mode
   end
 
