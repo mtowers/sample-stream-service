@@ -25,7 +25,8 @@ activity_queue            = ENV.fetch('ACTIVITY_QUEUE', 'sample-daemon.activity'
 debug_mode                = 'production' != ENV['DAEMON_ENV']
 max_retry_count           = 3 # retries on error
 metrics_provider          = Sneakers::Metrics::NewrelicMetrics.new if ENV['NEW_RELIC_LICENSE_KEY']
-mongodb_url               = URI(ENV.fetch('MONGODB_URL', 'mongodb://localhost:27017/sample-service'))
+mongodb_dbname            = 'sample-service'
+mongodb_host              = ENV.fetch('MONGODB_HOST', 'localhost:27017')
 rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@rabbit.realselfcorp.com:5672'))
 stream_activity_exchange  = ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream-activity-exchange')
 stream_activity_queue     = ENV.fetch('STREAM_ACTIVITY_QUEUE', 'sample-daemon.stream-activity')
@@ -62,14 +63,19 @@ RealSelf::logger.info("ACTIVITY_EXCHANGE:                 #{activity_exchange}")
 RealSelf::logger.info("ACTIVITY_QUEUE:                    #{activity_queue}")
 RealSelf::logger.info("RABBITMQ_URL:                      #{rmq_url.to_s}")
 RealSelf::logger.info("MAX_RETRY_COUNT:                   #{max_retry_count}")
-RealSelf::logger.info("MONGODB_URL:                       #{mongodb_url.to_s}")
+RealSelf::logger.info("MONGO_DATABASE:                    #{mongodb_dbname}")
+RealSelf::logger.info("MONGODB_HOST:                      #{mongodb_host}")
 RealSelf::logger.info("STREAM_ACTIVITY_EXCHANGE:          #{stream_activity_exchange}")
 RealSelf::logger.info("STREAM_ACTIVITY_QUEUE:             #{stream_activity_queue}")
 RealSelf::logger.info("WORKER_COUNT:                      #{worker_count}")
 
 
 # configure mongodb client
-mongo_client  = Mongo::Client.new([mongodb_url.to_s], :min_pool_size => worker_count)
+mongo_client = Mongo::Client.new([mongodb_host],
+                                 :database => mongodb_dbname,
+                                 :min_pool_size => mongo_pool_size,
+                                 :max_pool_size => mongo_pool_size * 2,
+                                 :server_selection_timeout => 5.0)
 mongo_db      = mongo_client.database
 
 

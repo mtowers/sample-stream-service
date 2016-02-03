@@ -1,8 +1,11 @@
 require 'mongo'
-require 'newsfeed'
 require 'realself/feed'
+require 'realself/handler'
 require 'realself/stream'
 require 'sinatra/base'
+require 'sinatra/json'
+
+require 'newsfeed'
 
 class RestApp < Sinatra::Base
 
@@ -18,9 +21,10 @@ class RestApp < Sinatra::Base
 
   # app configuration
   configure do
-    log_file        = ENV.fetch('HTTP_LOG', File.dirname(__FILE__) + '/../http.log')
-    log_level       = 'production' == ENV['RACK_ENV'] ? Logger::INFO : Logger::DEBUG
-    mongodb_url     = URI(ENV.fetch('MONGODB_URL', 'mongodb://localhost:27017/sample-service'))
+    log_file        = ENV.fetch('HTTP_LOG', File.dirname(__FILE__) + '/../log/http.log')
+    log_level       = 'production' == ENV['RACK_ENV'] ? ::Logger::INFO : ::Logger::DEBUG
+    mongodb_host    = ENV.fetch('MONGODB_HOST', 'localhost:27017')
+    mongodb_dbname  = 'sample-service'
     mongo_pool_size = ENV.fetch('MONGO_POOL_SIZE', 10).to_i
     req_timeout     = ENV.fetch('CONNECTION_TIMEOUT', 5.0)
 
@@ -36,18 +40,20 @@ class RestApp < Sinatra::Base
     Mongo::Logger.logger    = RealSelf::logger
 
     # mongodb client
-    mongo_client = Mongo::Client.new([mongodb_url],
+    mongo_client = Mongo::Client.new([mongodb_host],
+                                     :database => mongodb_dbname,
                                      :min_pool_size => mongo_pool_size,
                                      :max_pool_size => mongo_pool_size * 2,
                                      :server_selection_timeout => req_timeout)
 
     # create our newsfeed manager
     set :mongo_db, mongo_client.database
-    set :newsfeed, Newsfeed.new(mongo_client.database)
+    set :newsfeed, Newsfeed.new(mongo_db: mongo_client.database)
 
     # report startup configuration
     RealSelf::logger.info("HTTP_LOG:        #{log_file}")
-    RealSelf::logger.info("MONGO_DB_URL:    #{mongodb_url.to_s}")
+    RealSelf::logger.info("MONGO_HOST:      #{mongodb_host}")
+    RealSelf::logger.info("MONGO_DATABASE:  #{mongodb_dbname}")
     RealSelf::logger.info("MONGO_POOL_SIZE: #{mongo_pool_size}")
     RealSelf::logger.info("LOG_LEVEL:       #{RealSelf::logger.level}")
 
@@ -152,6 +158,7 @@ class RestApp < Sinatra::Base
       args[:include_owner]  = request[:include_owner].to_s.empty?      ?   false  : request[:include_owner].to_s == 'true'
       args[:interval]       = request[:interval].to_s.strip.empty?     ?   nil    : request[:interval].to_s.strip
       args[:mark_as_read]   = request[:mark_as_read].to_s.strip.empty? ?   false  : request[:mark_as_read].to_s.strip
+      args[:query]          = {}
 
       # disallow specification of both 'after' and 'interval' in the same request
       unless args[:after].nil? or args[:interval].nil?
@@ -168,7 +175,7 @@ class RestApp < Sinatra::Base
         BSON::ObjectId.from_time(Time.now - 86400 * 7).to_s
 
       when nil
-        args[:count] ||= DEFAULT_STREAM_ITEM_COUNT # use the default count if none specified
+        args[:count] ||= DEFAULT_FEED_PAGE_SIZE # use the default count if none specified
         args[:after]
 
       else
