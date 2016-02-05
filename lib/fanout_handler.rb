@@ -32,6 +32,8 @@ class FanoutHandler
     RealSelf::Graph::Follow.followers_of(:user, objects) do |follower, following|
       stream_activity = RealSelf::Stream::StreamActivity.new follower, activity, following
 
+      RealSelf::logger.info "Fanning out activity #{activity.uuid} to #{follower.to_s}"
+
       @publisher.publish(
         stream_activity,
         stream_activity.prototype,

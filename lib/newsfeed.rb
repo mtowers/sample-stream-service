@@ -9,7 +9,7 @@ class Newsfeed < RealSelf::Feed::Permanent
   include RealSelf::Feed::UnreadCountable
 
 
-  def initialize mongo_db:
+  def initialize debug_mode:, mongo_db:
     @mongo_db = mongo_db
   end
 

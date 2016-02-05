@@ -26,6 +26,7 @@ class RestApp < Sinatra::Base
     mongodb_host    = ENV.fetch('MONGODB_HOST', 'localhost:27017')
     mongodb_dbname  = 'sample-service'
     mongo_pool_size = ENV.fetch('MONGO_POOL_SIZE', 10).to_i
+    rmq_url         = ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672')
     req_timeout     = ENV.fetch('CONNECTION_TIMEOUT', 5.0)
 
     # http logging
@@ -49,12 +50,14 @@ class RestApp < Sinatra::Base
     # create our newsfeed manager
     set :mongo_db, mongo_client.database
     set :newsfeed, Newsfeed.new(mongo_db: mongo_client.database)
+    set :rmq_url, rmq_url
 
     # report startup configuration
     RealSelf::logger.info("HTTP_LOG:        #{log_file}")
     RealSelf::logger.info("MONGO_HOST:      #{mongodb_host}")
     RealSelf::logger.info("MONGO_DATABASE:  #{mongodb_dbname}")
     RealSelf::logger.info("MONGO_POOL_SIZE: #{mongo_pool_size}")
+    RealSelf::logger.info("RABBITMQ_URL     #{rmq_url.to_s}")
     RealSelf::logger.info("LOG_LEVEL:       #{RealSelf::logger.level}")
 
   end
@@ -93,6 +96,7 @@ class RestApp < Sinatra::Base
 
   # RESTfully handle  and fan out an activity in the same way the daemon does
   # NOTE:  This route accepts only Activity payloads (not StreamActivity)
+  # Requires that RABBITMQ_URL environment variable is set.
   post "/handle" do
     begin
       activity = RealSelf::Stream::Factory.from_json(
@@ -127,10 +131,20 @@ class RestApp < Sinatra::Base
 
     # handle the activity
     def handle_activity activity
+      # create a publisher to handle the fanout
+      publisher = RealSelf::Stream::Publisher.new({
+        :heartbeat  => 60,
+        :host       => settings.rmq_url.host,
+        :password   => settings.rmq_url.password,
+        :port       => settings.rmq_url.port,
+        :user       => settings.rmq_url.user,
+        :vhost      => '/'})
+
+      # create the handler(s) for the posted activity type
       handlers = RealSelf::Handler::Factory.create(
         activity.prototype,
         RealSelf::ContentType::ACTIVITY,
-        {mongo_db: settings.mongo_db} # handler constructor params
+        {mongo_db: settings.mongo_db, publisher: publisher} # handler constructor params
       )
 
       # wrap our calls to the handler(s) in the enclosure
@@ -142,7 +156,8 @@ class RestApp < Sinatra::Base
         end
       end
 
-      response
+      # return an empty response on success
+      :ack == response ? 202 : 500
     end
 
 

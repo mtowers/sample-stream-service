@@ -9,6 +9,7 @@ require 'sneakers'
 require 'sneakers/handlers/maxretry'
 require 'sneakers/metrics/newrelic_metrics'
 require 'sneakers/runner'
+require 'realself/graph/follow'
 require 'realself/stream'
 require 'realself/daemon'
 
@@ -73,8 +74,8 @@ RealSelf::logger.info("WORKER_COUNT:                      #{worker_count}")
 # configure mongodb client
 mongo_client = Mongo::Client.new([mongodb_host],
                                  :database => mongodb_dbname,
-                                 :min_pool_size => mongo_pool_size,
-                                 :max_pool_size => mongo_pool_size * 2,
+                                 :min_pool_size => worker_count,
+                                 :max_pool_size => worker_count * 2,
                                  :server_selection_timeout => 5.0)
 mongo_db      = mongo_client.database
 
@@ -109,7 +110,8 @@ RealSelf::Daemon::StreamActivityWorker.configure({
   :exchange_name    => stream_activity_exchange,
   :queue_name       => stream_activity_queue,
   :handler_params   => {
-    :mongo_db => mongo_db
+    :debug_mode => debug_mode,
+    :mongo_db   => mongo_db
   }
 })
 
