@@ -1,12 +1,13 @@
 GIT
   remote: ssh://git@github.com/RealSelf/stream-ruby.git
-  revision: dfbe67664360b5073ed4b7285d81f4f1c132cb38
+  revision: 5a318ec50c23f3acda5f19e3563527787bbc627c
   specs:
-    realself-stream (2.3.3)
+    realself-stream (2.3.4)
       bunny
       httparty
       json-schema
       multi_json
+      rake (~> 10.0)
 
 GIT
   remote: ssh://git@github.com/elastic/elasticsearch-ruby.git
@@ -87,7 +88,7 @@ GEM
     rspec-support (3.4.1)
     serverengine (1.5.11)
       sigdump (~> 0.2.2)
-    sigdump (0.2.3)
+    sigdump (0.2.4)
     sinatra (1.4.7)
       rack (~> 1.5)
       rack-protection (~> 1.4)
