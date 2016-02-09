@@ -18,9 +18,9 @@ class IndexHandler
                           "indexed_date"  => Time.new.strftime("%Y-%m-%dT%H:%M:%S")
                          }
     extended_fields    = activity.extensions || {}
-    @elasticsearch_client.index index:'stream-sample',
-                                type: activity.object,
-                                body: default_fields.merge extended_fields
+    @es_client.index index:'stream-sample',
+                     type: activity.object,
+                     body: default_fields.merge extended_fields
   end
 
   def handle activity
