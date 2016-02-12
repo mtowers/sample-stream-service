@@ -16,14 +16,16 @@ The REST service includes routes for managing a social graph of "follow" relatio
 
 # Usage
 
-You need to connect to running rabbitmq and mongodb servers.  Run them locally, or add environment variables pointing at each.
+You need to connect to running rabbitmq, elasticsearch and mongodb servers.  Run them locally, or add environment variables pointing at each.
 
 ### Starting the Daemon
+    export ELASTICSEARCH_URL='http://localhost:9200'
     export MONGODB_HOST='localhost:27017'
     export RABBITMQ_URL='amqp://guest:guest@localhost:5672'
     bundle exec bin/sample-daemon
 
 ### Starting the REST Service
+    export ELASTICSEARCH_URL='http://localhost:9200'
     export MONGODB_HOST='localhost:27017'
     export RABBITMQ_URL='amqp://guest:guest@localhost:5672'
     bundle exec rackup bin/rest-service

@@ -2,6 +2,7 @@
 lib = File.expand_path '../../lib', __FILE__
 $LOAD_PATH.unshift lib unless $LOAD_PATH.include? lib
 
+require 'elasticsearch'
 require 'mongo'
 require 'newrelic_rpm'
 require 'pry-byebug' if 'production' != ENV['DAEMON_ENV']
@@ -24,11 +25,12 @@ require 'test_enclosure'
 activity_exchange         = ENV.fetch('ACTIVITY_EXCHANGE', 'activity-exchange')
 activity_queue            = ENV.fetch('ACTIVITY_QUEUE', 'sample-daemon.activity')
 debug_mode                = 'production' != ENV['DAEMON_ENV']
+elasticsearch_url         = URI(ENV.fetch('ELASTICSEARCH_URL', 'http://localhost:9200'))
 max_retry_count           = 3 # retries on error
 metrics_provider          = Sneakers::Metrics::NewrelicMetrics.new if ENV['NEW_RELIC_LICENSE_KEY']
 mongodb_dbname            = 'sample-service'
 mongodb_host              = ENV.fetch('MONGODB_HOST', 'localhost:27017')
-rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@rabbit.realselfcorp.com:5672'))
+rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@127.0.0.1:5672'))
 stream_activity_exchange  = ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream-activity-exchange')
 stream_activity_queue     = ENV.fetch('STREAM_ACTIVITY_QUEUE', 'sample-daemon.stream-activity')
 worker_count              = 'production' != ENV['DAEMON_ENV'] ? 1 : 10
@@ -62,6 +64,7 @@ RealSelf::logger = Sneakers::logger
 RealSelf::logger.info("Staring daemon with environment:   #{ENV.fetch('DAEMON_ENV','development')}")
 RealSelf::logger.info("ACTIVITY_EXCHANGE:                 #{activity_exchange}")
 RealSelf::logger.info("ACTIVITY_QUEUE:                    #{activity_queue}")
+RealSelf::logger.info("ELASTICSEARCH_URL:                 #{elasticsearch_url.to_s}")
 RealSelf::logger.info("RABBITMQ_URL:                      #{rmq_url.to_s}")
 RealSelf::logger.info("MAX_RETRY_COUNT:                   #{max_retry_count}")
 RealSelf::logger.info("MONGO_DATABASE:                    #{mongodb_dbname}")
@@ -79,6 +82,11 @@ mongo_client = Mongo::Client.new([mongodb_host],
                                  :server_selection_timeout => 5.0)
 mongo_db      = mongo_client.database
 
+# configure elasticsearch client
+elasticsearch_client =  Elasticsearch::Client.new hosts: [{
+                          host: elasticsearch_url.host,
+                          port: elasticsearch_url.port
+                        }]
 
 # configure workers for Activity messages
 RealSelf::Daemon::ActivityWorker.configure({
