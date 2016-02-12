@@ -30,7 +30,7 @@ max_retry_count           = 3 # retries on error
 metrics_provider          = Sneakers::Metrics::NewrelicMetrics.new if ENV['NEW_RELIC_LICENSE_KEY']
 mongodb_dbname            = 'sample-service'
 mongodb_host              = ENV.fetch('MONGODB_HOST', 'localhost:27017')
-rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672'))
+rmq_url                   = URI(ENV.fetch('RABBITMQ_URL', 'amqp://guest:guest@127.0.0.1:5672'))
 stream_activity_exchange  = ENV.fetch('STREAM_ACTIVITY_EXCHANGE', 'stream-activity-exchange')
 stream_activity_queue     = ENV.fetch('STREAM_ACTIVITY_QUEUE', 'sample-daemon.stream-activity')
 worker_count              = 'production' != ENV['DAEMON_ENV'] ? 1 : 10
